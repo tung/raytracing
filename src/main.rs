@@ -1,20 +1,14 @@
+mod camera;
+mod color;
+mod ray;
+mod vec3;
+
+use camera::*;
+
 use miniquad::{
-    Bindings, BufferSource, BufferType, BufferUsage, EventHandler, GlContext, Pipeline,
-    RenderingBackend,
+    Bindings, BufferSource, BufferType, BufferUsage, EventHandler, FilterMode, GlContext, KeyCode,
+    KeyMods, Pipeline, RenderingBackend,
 };
-
-const WIDTH: usize = 4;
-const HEIGHT: usize = 4;
-
-fn rasterize(data: &mut [u8; WIDTH * HEIGHT * 4]) {
-    data.copy_from_slice(&[
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
-        0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-        0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-        0xFF, 0xFF, 0xFF, 0xFF,
-    ]);
-}
 
 #[repr(C)]
 struct Vertex {
@@ -33,19 +27,34 @@ struct App {
     gfx: GlContext,
     pipeline: Pipeline,
     bindings: Bindings,
+    camera: Camera,
 }
 
 impl App {
     fn new() -> Self {
+        // Image
+
+        let aspect_ratio = 16.0 / 9.0;
+        let image_width: u16 = 400;
+
+        // Calculate image height, and ensure it's at least 1.
+        let image_height: u16 = u16::max(1, (image_width as f64 / aspect_ratio) as u16);
+
+        // Camera
+
+        let camera = Camera::new(image_width as _, image_height as _);
+
+        // App Setup
+
         let mut gfx = GlContext::new();
 
         let pipeline = shader::pipeline(&mut gfx);
 
         let quad_vbuf_data: [Vertex; 4] = [
-            vertex(-1.0, 1.0, 0.0, 0.0),
-            vertex(1.0, 1.0, 1.0, 0.0),
-            vertex(1.0, -1.0, 1.0, 1.0),
-            vertex(-1.0, -1.0, 0.0, 1.0),
+            vertex(-1.0, 1.0, 0.0, 1.0),
+            vertex(1.0, 1.0, 1.0, 1.0),
+            vertex(1.0, -1.0, 1.0, 0.0),
+            vertex(-1.0, -1.0, 0.0, 0.0),
         ];
         let quad_vbuf = gfx.new_buffer(
             BufferType::VertexBuffer,
@@ -60,9 +69,8 @@ impl App {
             BufferSource::slice(&quad_ibuf_data),
         );
 
-        let mut pixels: [u8; WIDTH * HEIGHT * 4] = [0; WIDTH * HEIGHT * 4];
-        rasterize(&mut pixels);
-        let texture = gfx.new_texture_from_rgba8(WIDTH as u16, HEIGHT as u16, &pixels);
+        let texture = gfx.new_texture_from_rgba8(image_width, image_height, camera.get_pixels());
+        gfx.texture_set_mag_filter(texture, FilterMode::Nearest);
 
         let bindings = Bindings {
             vertex_buffers: vec![quad_vbuf],
@@ -70,7 +78,12 @@ impl App {
             images: vec![texture],
         };
 
-        Self { gfx, pipeline, bindings }
+        Self {
+            gfx,
+            pipeline,
+            bindings,
+            camera,
+        }
     }
 }
 
@@ -85,15 +98,25 @@ impl EventHandler for App {
         self.gfx.commit_frame();
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.camera.render();
+        self.gfx
+            .texture_update(self.bindings.images[0], self.camera.get_pixels());
+    }
+
+    fn key_down_event(&mut self, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
+        if keycode == KeyCode::Escape {
+            miniquad::window::request_quit();
+        }
+    }
 }
 
 fn main() {
     miniquad::start(
         miniquad::conf::Conf {
             window_title: String::from("raytracing"),
-            window_width: 640,
-            window_height: 480,
+            window_width: 1200,
+            window_height: 675,
             ..Default::default()
         },
         || Box::new(App::new()),
