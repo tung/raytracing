@@ -1,9 +1,15 @@
 mod camera;
 mod color;
+mod hit_record;
 mod ray;
+mod scene;
+mod sphere;
 mod vec3;
 
 use camera::*;
+use scene::*;
+use sphere::*;
+use vec3::*;
 
 use miniquad::{
     Bindings, BufferSource, BufferType, BufferUsage, EventHandler, FilterMode, GlContext, KeyCode,
@@ -28,6 +34,7 @@ struct App {
     pipeline: Pipeline,
     bindings: Bindings,
     camera: Camera,
+    scene: Scene,
 }
 
 impl App {
@@ -43,6 +50,13 @@ impl App {
         // Camera
 
         let camera = Camera::new(image_width as _, image_height as _);
+
+        // World
+
+        let mut scene = Scene::new();
+
+        scene.add(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5));
+        scene.add(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0));
 
         // App Setup
 
@@ -83,6 +97,7 @@ impl App {
             pipeline,
             bindings,
             camera,
+            scene,
         }
     }
 }
@@ -99,7 +114,7 @@ impl EventHandler for App {
     }
 
     fn update(&mut self) {
-        self.camera.render();
+        self.camera.render(&self.scene);
         self.gfx
             .texture_update(self.bindings.images[0], self.camera.get_pixels());
     }

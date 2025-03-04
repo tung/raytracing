@@ -8,6 +8,10 @@ impl Color {
         Self(Vec3::new(r, g, b))
     }
 
+    pub fn from_vec3(v3: Vec3) -> Self {
+        Self(v3)
+    }
+
     pub fn r(&self) -> f64 {
         self.0.x()
     }

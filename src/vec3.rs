@@ -86,3 +86,11 @@ impl std::ops::Div<f64> for Vec3 {
         Vec3([self.0[0] / rhs, self.0[1] / rhs, self.0[2] / rhs])
     }
 }
+
+impl std::ops::Neg for Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Vec3 {
+        Vec3([-self.0[0], -self.0[1], -self.0[2]])
+    }
+}

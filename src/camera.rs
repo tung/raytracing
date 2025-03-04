@@ -1,26 +1,11 @@
 use crate::color::*;
 use crate::ray::*;
+use crate::scene::*;
 use crate::vec3::*;
 
-fn hit_sphere(center: &Vec3, radius: f64, r: &Ray) -> Option<f64> {
-    let oc = *center - r.pos;
-    let a = r.dir.length_squared();
-    let h = r.dir.dot(oc);
-    let c = oc.length_squared() - radius * radius;
-    let discriminant = h * h - a * c;
-
-    if discriminant < 0.0 {
-        None
-    } else {
-        Some((h - discriminant.sqrt()) / a)
-    }
-}
-
-fn ray_color(r: &Ray) -> Color {
-    let sphere_pos = Vec3::new(0.0, 0.0, -1.0);
-    if let Some(t) = hit_sphere(&sphere_pos, 0.5, r) {
-        let n = (r.at(t) - sphere_pos).unit();
-        return 0.5 * Color::new(n.x() + 1.0, n.y() + 1.0, n.z() + 1.0);
+fn ray_color(r: &Ray, scene: &Scene) -> Color {
+    if let Some(rec) = scene.hit(r, 0.0, f64::INFINITY) {
+        return 0.5 * Color::from_vec3(rec.normal + Vec3::new(1.0, 1.0, 1.0));
     }
 
     let unit_direction = r.dir.unit();
@@ -75,7 +60,7 @@ impl Camera {
         &self.pixels
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, scene: &Scene) {
         let coords =
             (0..self.image_height).flat_map(|y| std::iter::repeat(y).zip(0..self.image_width));
 
@@ -88,7 +73,7 @@ impl Camera {
                 pos: self.camera_center,
                 dir: ray_direction,
             };
-            let pixel_color = ray_color(&ray);
+            let pixel_color = ray_color(&ray, scene);
 
             p[0] = (pixel_color.r() * 255.999).floor() as u8;
             p[1] = (pixel_color.g() * 255.999).floor() as u8;
