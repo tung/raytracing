@@ -18,6 +18,10 @@ impl Vec3 {
         self.0[2]
     }
 
+    pub fn dot(self, other: Self) -> f64 {
+        self.0[0] * other.0[0] + self.0[1] * other.0[1] + self.0[2] * other.0[2]
+    }
+
     pub fn length_squared(&self) -> f64 {
         self.0[0] * self.0[0] + self.0[1] * self.0[1] + self.0[2] * self.0[2]
     }
