@@ -13,8 +13,11 @@ use vec3::*;
 
 use miniquad::{
     Bindings, BufferSource, BufferType, BufferUsage, EventHandler, FilterMode, GlContext, KeyCode,
-    KeyMods, Pipeline, RenderingBackend,
+    KeyMods, Pipeline, RenderingBackend, UniformsSource,
 };
+
+const LAUNCH_WIDTH: i32 = 1200;
+const LAUNCH_HEIGHT: i32 = 675;
 
 #[repr(C)]
 struct Vertex {
@@ -29,10 +32,26 @@ fn vertex(x: f32, y: f32, u: f32, v: f32) -> Vertex {
     }
 }
 
+fn calc_zoom(
+    image_width: f32,
+    image_height: f32,
+    window_width: f32,
+    window_height: f32,
+) -> [f32; 2] {
+    let zoom_x = window_width / image_width;
+    let zoom_y = window_height / image_height;
+    if zoom_x <= zoom_y {
+        [1.0, zoom_x / zoom_y]
+    } else {
+        [zoom_y / zoom_x, 1.0]
+    }
+}
+
 struct App {
     gfx: GlContext,
     pipeline: Pipeline,
     bindings: Bindings,
+    zoom: [f32; 2],
     camera: Camera,
     scene: Scene,
 }
@@ -96,6 +115,12 @@ impl App {
             gfx,
             pipeline,
             bindings,
+            zoom: calc_zoom(
+                image_width as f32,
+                image_height as f32,
+                LAUNCH_WIDTH as f32,
+                LAUNCH_HEIGHT as f32,
+            ),
             camera,
             scene,
         }
@@ -107,6 +132,8 @@ impl EventHandler for App {
         self.gfx.begin_default_pass(Default::default());
         self.gfx.apply_pipeline(&self.pipeline);
         self.gfx.apply_bindings(&self.bindings);
+        self.gfx
+            .apply_uniforms(UniformsSource::table(&shader::Uniforms { zoom: self.zoom }));
         self.gfx.draw(0, 6, 1);
         self.gfx.end_render_pass();
 
@@ -124,14 +151,19 @@ impl EventHandler for App {
             miniquad::window::request_quit();
         }
     }
+
+    fn resize_event(&mut self, width: f32, height: f32) {
+        let (image_width, image_height) = self.gfx.texture_size(self.bindings.images[0]);
+        self.zoom = calc_zoom(image_width as f32, image_height as f32, width, height);
+    }
 }
 
 fn main() {
     miniquad::start(
         miniquad::conf::Conf {
             window_title: String::from("raytracing"),
-            window_width: 1200,
-            window_height: 675,
+            window_width: LAUNCH_WIDTH,
+            window_height: LAUNCH_HEIGHT,
             ..Default::default()
         },
         || Box::new(App::new()),
@@ -141,7 +173,7 @@ fn main() {
 mod shader {
     use miniquad::{
         BufferLayout, GlContext, Pipeline, PipelineParams, RenderingBackend, ShaderMeta,
-        ShaderSource, UniformBlockLayout, VertexAttribute, VertexFormat,
+        ShaderSource, UniformBlockLayout, UniformDesc, UniformType, VertexAttribute, VertexFormat,
     };
 
     const VERTEX: &str = r#"#version 100
@@ -150,10 +182,12 @@ mod shader {
     attribute vec2 in_pos;
     attribute vec2 in_uv;
 
+    uniform vec2 zoom;
+
     varying vec2 tex_coord;
 
     void main() {
-        gl_Position = vec4(in_pos, 0, 1);
+        gl_Position = vec4(in_pos * zoom, 0, 1);
         tex_coord = in_uv;
     }
     "#;
@@ -170,6 +204,11 @@ mod shader {
     }
     "#;
 
+    #[repr(C)]
+    pub struct Uniforms {
+        pub zoom: [f32; 2],
+    }
+
     pub fn pipeline(gfx: &mut GlContext) -> Pipeline {
         let shader = gfx
             .new_shader(
@@ -179,7 +218,9 @@ mod shader {
                 },
                 ShaderMeta {
                     images: vec![String::from("tex")],
-                    uniforms: UniformBlockLayout { uniforms: vec![] },
+                    uniforms: UniformBlockLayout {
+                        uniforms: vec![UniformDesc::new("zoom", UniformType::Float2)],
+                    },
                 },
             )
             .unwrap();
