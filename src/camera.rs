@@ -106,11 +106,10 @@ impl Camera {
         std::mem::swap(&mut colors, &mut self.colors);
 
         // Transfer written colors into pixel buffer.
-        let scale = 255.999 / self.render_passes;
         for (p, c) in self.pixels.chunks_exact_mut(4).zip(&self.colors) {
-            p[0] = (c.r() * scale).floor() as u8;
-            p[1] = (c.g() * scale).floor() as u8;
-            p[2] = (c.b() * scale).floor() as u8;
+            p[0] = ((c.r() / self.render_passes).sqrt() * 255.999).floor() as u8;
+            p[1] = ((c.g() / self.render_passes).sqrt() * 255.999).floor() as u8;
+            p[2] = ((c.b() / self.render_passes).sqrt() * 255.999).floor() as u8;
             p[3] = 255;
         }
 
