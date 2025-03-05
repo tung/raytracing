@@ -9,10 +9,14 @@ fn sample_square(rng: &mut Rng) -> Vec3 {
     Vec3::new(rng.random_f64() - 0.5, rng.random_f64() - 0.5, 0.0)
 }
 
-fn ray_color(rng: &mut Rng, r: &Ray, scene: &Scene) -> Color {
+fn ray_color(rng: &mut Rng, depth: u16, r: &Ray, scene: &Scene) -> Color {
+    if depth == 0 {
+        return Color::new(0.0, 0.0, 0.0);
+    }
+
     if let Some(rec) = scene.hit(r, 0.0, f64::INFINITY) {
         let sc_rec = rec.mat.scatter(rng, r, &rec);
-        return sc_rec.attenuation * ray_color(rng, &sc_rec.scattered, scene);
+        return sc_rec.attenuation * ray_color(rng, depth - 1, &sc_rec.scattered, scene);
     }
 
     let unit_direction = r.dir.unit();
@@ -26,6 +30,7 @@ pub struct Camera {
     colors: Vec<Color>,
     pixels: Vec<u8>,
     image_width: usize,
+    max_depth: u16,
     center: Vec3,
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
@@ -33,7 +38,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(image_width: f64, image_height: f64, rng_seed: u64) -> Self {
+    pub fn new(image_width: f64, image_height: f64, max_depth: u16, rng_seed: u64) -> Self {
         let colors = vec![Color::new(0.0, 0.0, 0.0); image_width as usize * image_height as usize];
         let pixels = vec![0_u8; 4 * image_width as usize * image_height as usize];
 
@@ -61,6 +66,7 @@ impl Camera {
             colors,
             pixels,
             image_width: image_width as _,
+            max_depth,
             center,
             pixel_delta_u,
             pixel_delta_v,
@@ -94,7 +100,7 @@ impl Camera {
         for (y, row) in colors.chunks_exact_mut(self.image_width).enumerate() {
             for (x, color) in row.iter_mut().enumerate() {
                 let ray = self.get_ray(x as f64, y as f64);
-                *color += ray_color(&mut self.rng, &ray, scene);
+                *color += ray_color(&mut self.rng, self.max_depth, &ray, scene);
             }
         }
         std::mem::swap(&mut colors, &mut self.colors);

@@ -76,6 +76,7 @@ impl App {
         let camera = Camera::new(
             image_width as _,
             image_height as _,
+            50,
             miniquad::date::now() as _,
         );
 
