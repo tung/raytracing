@@ -1,6 +1,7 @@
 mod camera;
 mod color;
 mod hit_record;
+mod material;
 mod random;
 mod ray;
 mod scene;
@@ -8,6 +9,8 @@ mod sphere;
 mod vec3;
 
 use camera::*;
+use color::*;
+use material::*;
 use scene::*;
 use sphere::*;
 use vec3::*;
@@ -16,6 +19,7 @@ use miniquad::{
     Bindings, BufferSource, BufferType, BufferUsage, EventHandler, FilterMode, GlContext, KeyCode,
     KeyMods, Pipeline, RenderingBackend, UniformsSource,
 };
+use std::rc::Rc;
 
 const LAUNCH_WIDTH: i32 = 1200;
 const LAUNCH_HEIGHT: i32 = 675;
@@ -77,10 +81,20 @@ impl App {
 
         // World
 
+        let material = Rc::new(Material::lambertian(Color::new(0.5, 0.5, 0.5)));
+
         let mut scene = Scene::new();
 
-        scene.add(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5));
-        scene.add(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0));
+        scene.add(Sphere::new(
+            Vec3::new(0.0, 0.0, -1.0),
+            0.5,
+            Rc::clone(&material),
+        ));
+        scene.add(Sphere::new(
+            Vec3::new(0.0, -100.5, -1.0),
+            100.0,
+            Rc::clone(&material),
+        ));
 
         // App Setup
 

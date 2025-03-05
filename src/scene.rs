@@ -15,8 +15,8 @@ impl Scene {
         self.spheres.push(sphere);
     }
 
-    pub fn hit(&self, r: &Ray, ray_tmin: f64, ray_tmax: f64) -> Option<HitRecord> {
-        let mut hit_rec: Option<HitRecord> = None;
+    pub fn hit<'s>(&'s self, r: &Ray, ray_tmin: f64, ray_tmax: f64) -> Option<HitRecord<'s>> {
+        let mut hit_rec: Option<HitRecord<'s>> = None;
         let mut closest_so_far = ray_tmax;
 
         for sphere in &self.spheres {

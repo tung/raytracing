@@ -9,9 +9,10 @@ fn sample_square(rng: &mut Rng) -> Vec3 {
     Vec3::new(rng.random_f64() - 0.5, rng.random_f64() - 0.5, 0.0)
 }
 
-fn ray_color(r: &Ray, scene: &Scene) -> Color {
+fn ray_color(rng: &mut Rng, r: &Ray, scene: &Scene) -> Color {
     if let Some(rec) = scene.hit(r, 0.0, f64::INFINITY) {
-        return 0.5 * Color::from_vec3(rec.normal + Vec3::new(1.0, 1.0, 1.0));
+        let sc_rec = rec.mat.scatter(rng, r, &rec);
+        return sc_rec.attenuation * ray_color(rng, &sc_rec.scattered, scene);
     }
 
     let unit_direction = r.dir.unit();
@@ -93,7 +94,7 @@ impl Camera {
         for (y, row) in colors.chunks_exact_mut(self.image_width).enumerate() {
             for (x, color) in row.iter_mut().enumerate() {
                 let ray = self.get_ray(x as f64, y as f64);
-                *color += ray_color(&ray, scene);
+                *color += ray_color(&mut self.rng, &ray, scene);
             }
         }
         std::mem::swap(&mut colors, &mut self.colors);

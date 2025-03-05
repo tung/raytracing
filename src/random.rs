@@ -64,4 +64,8 @@ impl Rng {
         let limit = (1 << 53) - 1;
         self.random_u64(limit - 1) as f64 / limit as f64
     }
+
+    pub fn random_f64_range(&mut self, min: f64, max: f64) -> f64 {
+        min + (max - min) * self.random_f64()
+    }
 }

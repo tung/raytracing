@@ -33,6 +33,14 @@ impl std::ops::Add for Color {
     }
 }
 
+impl std::ops::Mul for Color {
+    type Output = Color;
+
+    fn mul(self, rhs: Color) -> Color {
+        Color(self.0 * rhs.0)
+    }
+}
+
 impl std::ops::Mul<Color> for f64 {
     type Output = Color;
 

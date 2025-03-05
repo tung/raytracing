@@ -1,18 +1,26 @@
 use crate::hit_record::*;
+use crate::material::*;
 use crate::ray::*;
 use crate::vec3::*;
+
+use std::rc::Rc;
 
 pub struct Sphere {
     center: Vec3,
     radius: f64,
+    mat: Rc<Material>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64) -> Self {
-        Self { center, radius }
+    pub fn new(center: Vec3, radius: f64, mat: Rc<Material>) -> Self {
+        Self {
+            center,
+            radius,
+            mat,
+        }
     }
 
-    pub fn hit(&self, r: &Ray, ray_tmin: f64, ray_tmax: f64) -> Option<HitRecord> {
+    pub fn hit<'s>(&'s self, r: &Ray, ray_tmin: f64, ray_tmax: f64) -> Option<HitRecord<'s>> {
         let oc = self.center - r.pos;
         let a = r.dir.length_squared();
         let h = r.dir.dot(oc);
@@ -38,6 +46,7 @@ impl Sphere {
             r,
             root,
             (r.at(root) - self.center) / self.radius,
+            &self.mat,
         ))
     }
 }
