@@ -94,3 +94,11 @@ impl std::ops::Neg for Vec3 {
         Vec3([-self.0[0], -self.0[1], -self.0[2]])
     }
 }
+
+impl std::ops::AddAssign for Vec3 {
+    fn add_assign(&mut self, rhs: Vec3) {
+        self.0[0] += rhs.0[0];
+        self.0[1] += rhs.0[1];
+        self.0[2] += rhs.0[2];
+    }
+}

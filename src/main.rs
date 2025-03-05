@@ -1,6 +1,7 @@
 mod camera;
 mod color;
 mod hit_record;
+mod random;
 mod ray;
 mod scene;
 mod sphere;
@@ -68,7 +69,11 @@ impl App {
 
         // Camera
 
-        let camera = Camera::new(image_width as _, image_height as _);
+        let camera = Camera::new(
+            image_width as _,
+            image_height as _,
+            miniquad::date::now() as _,
+        );
 
         // World
 

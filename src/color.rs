@@ -40,3 +40,9 @@ impl std::ops::Mul<Color> for f64 {
         Color(self * rhs.0)
     }
 }
+
+impl std::ops::AddAssign for Color {
+    fn add_assign(&mut self, rhs: Color) {
+        self.0 += rhs.0;
+    }
+}
