@@ -21,7 +21,7 @@ impl Material {
     pub fn scatter(&self, rng: &mut Rng, _r_in: &Ray, rec: &HitRecord) -> ScatterRecord {
         match self {
             Self::Lambertian { albedo } => {
-                let scatter_direction = Vec3::random_on_hemisphere(rng, &rec.normal);
+                let scatter_direction = rec.normal + Vec3::random_unit_vector(rng);
 
                 ScatterRecord {
                     attenuation: *albedo,

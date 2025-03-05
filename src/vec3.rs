@@ -53,15 +53,6 @@ impl Vec3 {
             }
         }
     }
-
-    pub fn random_on_hemisphere(rng: &mut Rng, normal: &Self) -> Self {
-        let on_unit_sphere = Self::random_unit_vector(rng);
-        if on_unit_sphere.dot(*normal) > 0.0 {
-            on_unit_sphere
-        } else {
-            -on_unit_sphere
-        }
-    }
 }
 
 impl std::ops::Add for Vec3 {
