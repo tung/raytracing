@@ -11,6 +11,7 @@ mod vec3;
 use camera::*;
 use color::*;
 use material::*;
+use random::*;
 use scene::*;
 use sphere::*;
 use vec3::*;
@@ -63,23 +64,6 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        // Image
-
-        let aspect_ratio = 16.0 / 9.0;
-        let image_width: u16 = 400;
-
-        // Calculate image height, and ensure it's at least 1.
-        let image_height: u16 = u16::max(1, (image_width as f64 / aspect_ratio) as u16);
-
-        // Camera
-
-        let camera = Camera::new(
-            image_width as _,
-            image_height as _,
-            50,
-            miniquad::date::now() as _,
-        );
-
         // World
 
         let material_ground = Rc::new(Material::lambertian(Color::new(0.8, 0.8, 0.0)));
@@ -115,6 +99,21 @@ impl App {
             0.5,
             Rc::clone(&material_right),
         ));
+
+        // Camera
+
+        let image_width: u16 = 400;
+
+        let camera = Camera::new(
+            Rng::new(miniquad::date::now() as _),
+            CameraOptions {
+                aspect_ratio: 16.0 / 9.0,
+                image_width,
+                max_depth: 50,
+            },
+        );
+
+        let image_height = camera.get_image_height() as u16;
 
         // App Setup
 

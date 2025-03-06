@@ -4,6 +4,22 @@ use crate::ray::*;
 use crate::scene::*;
 use crate::vec3::*;
 
+pub struct CameraOptions {
+    pub aspect_ratio: f64, // Ratio of image width over height
+    pub image_width: u16,  // Rendered image width in pixel count
+    pub max_depth: u16,    // Maximum number of ray bounces into scene
+}
+
+impl Default for CameraOptions {
+    fn default() -> Self {
+        Self {
+            aspect_ratio: 1.0,
+            image_width: 100,
+            max_depth: 10,
+        }
+    }
+}
+
 fn sample_square(rng: &mut Rng) -> Vec3 {
     // Returns the vector to a random point in the [-0.5,-0.5] to [+0.5,+0.5] unit square.
     Vec3::new(rng.random_f64() - 0.5, rng.random_f64() - 0.5, 0.0)
@@ -33,6 +49,7 @@ pub struct Camera {
     colors: Vec<Color>,
     pixels: Vec<u8>,
     image_width: usize,
+    image_height: usize,
     max_depth: u16,
     center: Vec3,
     pixel_delta_u: Vec3,
@@ -41,9 +58,18 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new(image_width: f64, image_height: f64, max_depth: u16, rng_seed: u64) -> Self {
-        let colors = vec![Color::new(0.0, 0.0, 0.0); image_width as usize * image_height as usize];
-        let pixels = vec![0_u8; 4 * image_width as usize * image_height as usize];
+    pub fn new(rng: Rng, options: CameraOptions) -> Self {
+        let i_width_usize = options.image_width as usize;
+        let i_height_usize = usize::max(
+            1,
+            (options.image_width as f64 / options.aspect_ratio) as usize,
+        );
+
+        let colors = vec![Color::new(0.0, 0.0, 0.0); i_width_usize * i_height_usize];
+        let pixels = vec![0_u8; 4 * i_width_usize * i_height_usize];
+
+        let image_width = i_width_usize as f64;
+        let image_height = i_height_usize as f64;
 
         let focal_length = 1.0;
         let viewport_height = 2.0;
@@ -64,17 +90,22 @@ impl Camera {
         let pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
         Self {
-            rng: Rng::new(rng_seed),
+            rng,
             render_passes: 1.0,
             colors,
             pixels,
-            image_width: image_width as _,
-            max_depth,
+            image_width: i_width_usize,
+            image_height: i_height_usize,
+            max_depth: options.max_depth,
             center,
             pixel_delta_u,
             pixel_delta_v,
             pixel00_loc,
         }
+    }
+
+    pub fn get_image_height(&self) -> usize {
+        self.image_height
     }
 
     pub fn get_pixels(&self) -> &[u8] {
