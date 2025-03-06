@@ -69,13 +69,21 @@ impl Material {
                 };
 
                 let unit_direction = r_in.dir.unit();
-                let refracted = unit_direction.refract(rec.normal, ri);
+                let cos_theta = f64::min((-unit_direction).dot(rec.normal), 1.0);
+                let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+
+                let cannot_refract = ri * sin_theta > 1.0;
+                let direction = if cannot_refract {
+                    unit_direction.reflect(rec.normal)
+                } else {
+                    unit_direction.refract(rec.normal, ri)
+                };
 
                 Some(ScatterRecord {
                     attenuation: Color::new(1.0, 1.0, 1.0),
                     scattered: Ray {
                         pos: rec.p,
-                        dir: refracted,
+                        dir: direction,
                     },
                 })
             }
