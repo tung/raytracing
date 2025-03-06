@@ -64,58 +64,76 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        // World
+        let mut rng = Rng::new(miniquad::date::now() as _);
 
-        let material_ground = Rc::new(Material::lambertian(Color::new(0.8, 0.8, 0.0)));
-        let material_center = Rc::new(Material::lambertian(Color::new(0.1, 0.2, 0.5)));
-        let material_left = Rc::new(Material::dielectric(1.5));
-        let material_bubble = Rc::new(Material::dielectric(1.0 / 1.5));
-        let material_right = Rc::new(Material::metal(Color::new(0.8, 0.6, 0.2), 1.0));
+        // Scene
 
         let mut scene = Scene::new();
 
+        let ground_material = Rc::new(Material::lambertian(Color::new(0.5, 0.5, 0.5)));
         scene.add(Sphere::new(
-            Vec3::new(0.0, -100.5, -1.0),
-            100.0,
-            Rc::clone(&material_ground),
+            Vec3::new(0.0, -1000.0, 0.0),
+            1000.0,
+            ground_material,
         ));
-        scene.add(Sphere::new(
-            Vec3::new(0.0, 0.0, -1.2),
-            0.5,
-            Rc::clone(&material_center),
-        ));
-        scene.add(Sphere::new(
-            Vec3::new(-1.0, 0.0, -1.0),
-            0.5,
-            Rc::clone(&material_left),
-        ));
-        scene.add(Sphere::new(
-            Vec3::new(-1.0, 0.0, -1.0),
-            0.4,
-            Rc::clone(&material_bubble),
-        ));
-        scene.add(Sphere::new(
-            Vec3::new(1.0, 0.0, -1.0),
-            0.5,
-            Rc::clone(&material_right),
-        ));
+
+        for a in -11..11 {
+            for b in -11..11 {
+                let center = Vec3::new(
+                    a as f64 + 0.9 * rng.random_f64(),
+                    0.2,
+                    b as f64 + 0.9 * rng.random_f64(),
+                );
+
+                if (center - Vec3::new(4.0, 0.2, 0.0)).length() <= 0.9 {
+                    continue;
+                }
+
+                let choose_mat = rng.random_f64();
+                let sphere_material: Rc<Material> = if choose_mat < 0.8 {
+                    // diffuse
+                    let albedo = Color::from_vec3(Vec3::random(&mut rng))
+                        * Color::from_vec3(Vec3::random(&mut rng));
+                    Rc::new(Material::lambertian(albedo))
+                } else if choose_mat < 0.95 {
+                    // metal
+                    let albedo = Color::from_vec3(Vec3::random_range(&mut rng, 0.5, 1.0));
+                    let fuzz = rng.random_f64_range(0.0, 0.5);
+                    Rc::new(Material::metal(albedo, fuzz))
+                } else {
+                    // glass
+                    Rc::new(Material::dielectric(1.5))
+                };
+
+                scene.add(Sphere::new(center, 0.2, sphere_material));
+            }
+        }
+
+        let material1 = Rc::new(Material::dielectric(1.5));
+        scene.add(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0, material1));
+
+        let material2 = Rc::new(Material::lambertian(Color::new(0.4, 0.2, 0.1)));
+        scene.add(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0, material2));
+
+        let material3 = Rc::new(Material::metal(Color::new(0.7, 0.6, 0.5), 0.0));
+        scene.add(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0, material3));
 
         // Camera
 
-        let image_width: u16 = 400;
+        let image_width: u16 = 1200;
 
         let camera = Camera::new(
-            Rng::new(miniquad::date::now() as _),
+            rng,
             CameraOptions {
                 aspect_ratio: 16.0 / 9.0,
                 image_width,
                 max_depth: 50,
                 vfov: 20.0,
-                lookfrom: Vec3::new(-2.0, 2.0, 1.0),
-                lookat: Vec3::new(0.0, 0.0, -1.0),
+                lookfrom: Vec3::new(13.0, 2.0, 3.0),
+                lookat: Vec3::new(0.0, 0.0, 0.0),
                 vup: Vec3::new(0.0, 1.0, 0.0),
-                defocus_angle: 10.0,
-                focus_dist: 3.4,
+                defocus_angle: 0.6,
+                focus_dist: 10.0,
             },
         );
 

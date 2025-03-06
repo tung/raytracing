@@ -42,6 +42,10 @@ impl Vec3 {
         self.0[0].abs() < s && self.0[1].abs() < s && self.0[2].abs() < s
     }
 
+    pub fn random(rng: &mut Rng) -> Self {
+        Self([rng.random_f64(), rng.random_f64(), rng.random_f64()])
+    }
+
     pub fn random_range(rng: &mut Rng, min: f64, max: f64) -> Self {
         Self([
             rng.random_f64_range(min, max),
