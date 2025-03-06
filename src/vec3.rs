@@ -59,6 +59,10 @@ impl Vec3 {
             }
         }
     }
+
+    pub fn reflect(self, n: Self) -> Self {
+        self - 2.0 * self.dot(n) * n
+    }
 }
 
 impl std::ops::Add for Vec3 {

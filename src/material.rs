@@ -11,6 +11,7 @@ pub struct ScatterRecord {
 
 pub enum Material {
     Lambertian { albedo: Color },
+    Metal { albedo: Color },
 }
 
 impl Material {
@@ -18,7 +19,11 @@ impl Material {
         Self::Lambertian { albedo }
     }
 
-    pub fn scatter(&self, rng: &mut Rng, _r_in: &Ray, rec: &HitRecord) -> ScatterRecord {
+    pub fn metal(albedo: Color) -> Self {
+        Self::Metal { albedo }
+    }
+
+    pub fn scatter(&self, rng: &mut Rng, r_in: &Ray, rec: &HitRecord) -> ScatterRecord {
         match self {
             Self::Lambertian { albedo } => {
                 let mut scatter_direction = rec.normal + Vec3::random_unit_vector(rng);
@@ -33,6 +38,16 @@ impl Material {
                     scattered: Ray {
                         pos: rec.p,
                         dir: scatter_direction,
+                    },
+                }
+            }
+            Self::Metal { albedo } => {
+                let reflected = r_in.dir.reflect(rec.normal);
+                ScatterRecord {
+                    attenuation: *albedo,
+                    scattered: Ray {
+                        pos: rec.p,
+                        dir: reflected,
                     },
                 }
             }
