@@ -94,24 +94,31 @@ impl Camera {
     }
 
     pub fn render(&mut self, scene: &Scene) {
-        // Cast rays and write colors into color buffer.
         let mut colors = Vec::new();
+        let mut pixels = Vec::new();
+
         std::mem::swap(&mut colors, &mut self.colors);
-        for (y, row) in colors.chunks_exact_mut(self.image_width).enumerate() {
-            for (x, color) in row.iter_mut().enumerate() {
+        std::mem::swap(&mut pixels, &mut self.pixels);
+
+        let color_rows = colors.chunks_exact_mut(self.image_width);
+        let pixel_rows = pixels.chunks_exact_mut(self.image_width * 4);
+
+        for (y, (color_row, pixel_row)) in color_rows.zip(pixel_rows).enumerate() {
+            let cs = color_row.iter_mut();
+            let ps = pixel_row.chunks_exact_mut(4);
+
+            for (x, (c, p)) in cs.zip(ps).enumerate() {
                 let ray = self.get_ray(x as f64, y as f64);
-                *color += ray_color(&mut self.rng, self.max_depth, &ray, scene);
+                *c += ray_color(&mut self.rng, self.max_depth, &ray, scene);
+                p[0] = ((c.r() / self.render_passes).sqrt() * 255.999) as u8;
+                p[1] = ((c.g() / self.render_passes).sqrt() * 255.999) as u8;
+                p[2] = ((c.b() / self.render_passes).sqrt() * 255.999) as u8;
+                p[3] = 255;
             }
         }
-        std::mem::swap(&mut colors, &mut self.colors);
 
-        // Transfer written colors into pixel buffer.
-        for (p, c) in self.pixels.chunks_exact_mut(4).zip(&self.colors) {
-            p[0] = ((c.r() / self.render_passes).sqrt() * 255.999).floor() as u8;
-            p[1] = ((c.g() / self.render_passes).sqrt() * 255.999).floor() as u8;
-            p[2] = ((c.b() / self.render_passes).sqrt() * 255.999).floor() as u8;
-            p[3] = 255;
-        }
+        std::mem::swap(&mut colors, &mut self.colors);
+        std::mem::swap(&mut pixels, &mut self.pixels);
 
         self.render_passes += 1.0;
     }
