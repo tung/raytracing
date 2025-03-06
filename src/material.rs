@@ -12,6 +12,7 @@ pub struct ScatterRecord {
 pub enum Material {
     Lambertian { albedo: Color },
     Metal { albedo: Color, fuzz: f64 },
+    Dieletric { refraction_index: f64 },
 }
 
 impl Material {
@@ -21,6 +22,10 @@ impl Material {
 
     pub fn metal(albedo: Color, fuzz: f64) -> Self {
         Self::Metal { albedo, fuzz }
+    }
+
+    pub fn dielectric(refraction_index: f64) -> Self {
+        Self::Dieletric { refraction_index }
     }
 
     pub fn scatter(&self, rng: &mut Rng, r_in: &Ray, rec: &HitRecord) -> Option<ScatterRecord> {
@@ -55,6 +60,24 @@ impl Material {
                 } else {
                     None
                 }
+            }
+            Self::Dieletric { refraction_index } => {
+                let ri = if rec.front_face {
+                    1.0 / *refraction_index
+                } else {
+                    *refraction_index
+                };
+
+                let unit_direction = r_in.dir.unit();
+                let refracted = unit_direction.refract(rec.normal, ri);
+
+                Some(ScatterRecord {
+                    attenuation: Color::new(1.0, 1.0, 1.0),
+                    scattered: Ray {
+                        pos: rec.p,
+                        dir: refracted,
+                    },
+                })
             }
         }
     }
