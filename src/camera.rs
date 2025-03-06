@@ -15,8 +15,11 @@ fn ray_color(rng: &mut Rng, depth: u16, r: &Ray, scene: &Scene) -> Color {
     }
 
     if let Some(rec) = scene.hit(r, 0.001, f64::INFINITY) {
-        let sc_rec = rec.mat.scatter(rng, r, &rec);
-        return sc_rec.attenuation * ray_color(rng, depth - 1, &sc_rec.scattered, scene);
+        return if let Some(sc_rec) = rec.mat.scatter(rng, r, &rec) {
+            sc_rec.attenuation * ray_color(rng, depth - 1, &sc_rec.scattered, scene)
+        } else {
+            Color::new(0.0, 0.0, 0.0)
+        };
     }
 
     let unit_direction = r.dir.unit();
