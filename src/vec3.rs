@@ -28,6 +28,12 @@ impl Vec3 {
         self.0[0] * self.0[0] + self.0[1] * self.0[1] + self.0[2] * self.0[2]
     }
 
+    pub fn near_zero(&self) -> bool {
+        // Returns true if the vector is close to zero in all directions.
+        let s = 1.0e-8;
+        self.0[0].abs() < s && self.0[1].abs() < s && self.0[2].abs() < s
+    }
+
     pub fn random_range(rng: &mut Rng, min: f64, max: f64) -> Self {
         Self([
             rng.random_f64_range(min, max),
