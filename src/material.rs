@@ -9,6 +9,13 @@ pub struct ScatterRecord {
     pub scattered: Ray,
 }
 
+fn reflectance(cosine: f64, refraction_index: f64) -> f64 {
+    // Use Schlick's approximation for reflectance.
+    let mut r0 = (1.0 - refraction_index) / (1.0 + refraction_index);
+    r0 *= r0;
+    r0 + (1.0 - r0) * (1.0 - cosine).powf(5.0)
+}
+
 pub enum Material {
     Lambertian { albedo: Color },
     Metal { albedo: Color, fuzz: f64 },
@@ -73,7 +80,7 @@ impl Material {
                 let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
 
                 let cannot_refract = ri * sin_theta > 1.0;
-                let direction = if cannot_refract {
+                let direction = if cannot_refract || reflectance(cos_theta, ri) > rng.random_f64() {
                     unit_direction.reflect(rec.normal)
                 } else {
                     unit_direction.refract(rec.normal, ri)
