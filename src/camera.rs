@@ -57,6 +57,7 @@ fn ray_color(rng: &mut Rng, depth: u16, r: &Ray, scene: &Scene) -> Color {
 
 pub struct Camera {
     rng: Rng,
+    start_row: usize,
     render_passes: f64,
     colors: Vec<Color>,
     pixels: Vec<u8>,
@@ -119,6 +120,7 @@ impl Camera {
 
         Self {
             rng,
+            start_row: 0,
             render_passes: 1.0,
             colors,
             pixels,
@@ -171,7 +173,7 @@ impl Camera {
         }
     }
 
-    pub fn render(&mut self, scene: &Scene) {
+    pub fn render(&mut self, scene: &Scene, until: f64) {
         let mut colors = Vec::new();
         let mut pixels = Vec::new();
 
@@ -181,7 +183,9 @@ impl Camera {
         let color_rows = colors.chunks_exact_mut(self.image_width);
         let pixel_rows = pixels.chunks_exact_mut(self.image_width * 4);
 
-        for (y, (color_row, pixel_row)) in color_rows.zip(pixel_rows).enumerate() {
+        for (y, (color_row, pixel_row)) in
+            color_rows.zip(pixel_rows).enumerate().skip(self.start_row)
+        {
             let cs = color_row.iter_mut();
             let ps = pixel_row.chunks_exact_mut(4);
 
@@ -193,11 +197,18 @@ impl Camera {
                 p[2] = ((c.b() / self.render_passes).sqrt() * 255.999) as u8;
                 p[3] = 255;
             }
+
+            self.start_row += 1;
+            if self.start_row >= self.image_height {
+                self.render_passes += 1.0;
+                self.start_row = 0;
+            }
+            if miniquad::date::now() >= until {
+                break;
+            }
         }
 
         std::mem::swap(&mut colors, &mut self.colors);
         std::mem::swap(&mut pixels, &mut self.pixels);
-
-        self.render_passes += 1.0;
     }
 }

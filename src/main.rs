@@ -185,7 +185,8 @@ impl EventHandler for App {
     }
 
     fn update(&mut self) {
-        self.camera.render(&self.scene);
+        self.camera
+            .render(&self.scene, miniquad::date::now() + 0.75 / 60.0);
         self.gfx
             .texture_update(self.bindings.images[0], self.camera.get_pixels());
     }
