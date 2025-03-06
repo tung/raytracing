@@ -24,6 +24,14 @@ impl Vec3 {
         self.0[0] * other.0[0] + self.0[1] * other.0[1] + self.0[2] * other.0[2]
     }
 
+    pub fn cross(self, other: Self) -> Self {
+        Self([
+            self.0[1] * other.0[2] - self.0[2] * other.0[1],
+            self.0[2] * other.0[0] - self.0[0] * other.0[2],
+            self.0[0] * other.0[1] - self.0[1] * other.0[0],
+        ])
+    }
+
     pub fn length_squared(&self) -> f64 {
         self.0[0] * self.0[0] + self.0[1] * self.0[1] + self.0[2] * self.0[2]
     }

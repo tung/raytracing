@@ -9,6 +9,9 @@ pub struct CameraOptions {
     pub image_width: u16,  // Rendered image width in pixel count
     pub max_depth: u16,    // Maximum number of ray bounces into scene
     pub vfov: f64,         // Vertical view angle (field of view)
+    pub lookfrom: Vec3,    // Point camera is looking from
+    pub lookat: Vec3,      // Point camera is looking at
+    pub vup: Vec3,         // Camera-relative "up" direction
 }
 
 impl Default for CameraOptions {
@@ -18,6 +21,9 @@ impl Default for CameraOptions {
             image_width: 100,
             max_depth: 10,
             vfov: 90.0,
+            lookfrom: Vec3::new(0.0, 0.0, 0.0),
+            lookat: Vec3::new(0.0, 0.0, -1.0),
+            vup: Vec3::new(0.0, 1.0, 0.0),
         }
     }
 }
@@ -73,24 +79,30 @@ impl Camera {
         let image_width = i_width_usize as f64;
         let image_height = i_height_usize as f64;
 
-        let focal_length = 1.0;
+        let center = options.lookfrom;
+
+        // Determine viewport dimensions.
+        let focal_length = (options.lookfrom - options.lookat).length();
         let theta = options.vfov.to_radians();
         let h = (theta / 2.0).tan();
         let viewport_height = 2.0 * h * focal_length;
         let viewport_width = viewport_height * image_width / image_height;
-        let center = Vec3::new(0.0, 0.0, 0.0);
+
+        // Calculate the u,v,w unit basis vectors for the camera coordinate frame.
+        let w = (options.lookfrom - options.lookat).unit();
+        let u = options.vup.cross(w).unit();
+        let v = w.cross(u);
 
         // Calculate the vectors across the horizontal and down the vertical viewport edges.
-        let viewport_u = Vec3::new(viewport_width, 0.0, 0.0);
-        let viewport_v = Vec3::new(0.0, viewport_height, 0.0);
+        let viewport_u = viewport_width * u; // Vector across viewport horizontal edge
+        let viewport_v = viewport_height * -v; // Vector across viewport vertical edge
 
         // Calculate the horizontal and vertical delta vectors from pixel to pixel.
         let pixel_delta_u = viewport_u / image_width;
         let pixel_delta_v = viewport_v / image_height;
 
         // Calculate the location of the upper left pixel.
-        let viewport_upper_left =
-            center - Vec3::new(0.0, 0.0, focal_length) - viewport_u / 2.0 - viewport_v / 2.0;
+        let viewport_upper_left = center - focal_length * w - viewport_u / 2.0 - viewport_v / 2.0;
         let pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
         Self {
