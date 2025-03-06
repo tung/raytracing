@@ -58,6 +58,19 @@ impl Vec3 {
         *self / self.length()
     }
 
+    pub fn random_in_unit_disk(rng: &mut Rng) -> Self {
+        loop {
+            let p = Self([
+                rng.random_f64_range(-1.0, 1.0),
+                rng.random_f64_range(-1.0, 1.0),
+                0.0,
+            ]);
+            if p.length_squared() < 1.0 {
+                return p;
+            }
+        }
+    }
+
     pub fn random_unit_vector(rng: &mut Rng) -> Self {
         loop {
             let p = Self::random_range(rng, -1.0, 1.0);

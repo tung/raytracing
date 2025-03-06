@@ -5,13 +5,15 @@ use crate::scene::*;
 use crate::vec3::*;
 
 pub struct CameraOptions {
-    pub aspect_ratio: f64, // Ratio of image width over height
-    pub image_width: u16,  // Rendered image width in pixel count
-    pub max_depth: u16,    // Maximum number of ray bounces into scene
-    pub vfov: f64,         // Vertical view angle (field of view)
-    pub lookfrom: Vec3,    // Point camera is looking from
-    pub lookat: Vec3,      // Point camera is looking at
-    pub vup: Vec3,         // Camera-relative "up" direction
+    pub aspect_ratio: f64,  // Ratio of image width over height
+    pub image_width: u16,   // Rendered image width in pixel count
+    pub max_depth: u16,     // Maximum number of ray bounces into scene
+    pub vfov: f64,          // Vertical view angle (field of view)
+    pub lookfrom: Vec3,     // Point camera is looking from
+    pub lookat: Vec3,       // Point camera is looking at
+    pub vup: Vec3,          // Camera-relative "up" direction
+    pub defocus_angle: f64, // Variation angle of rays through each pixel.
+    pub focus_dist: f64,    // Distance from camera lookfrom point to plane of perfect focus.
 }
 
 impl Default for CameraOptions {
@@ -24,6 +26,8 @@ impl Default for CameraOptions {
             lookfrom: Vec3::new(0.0, 0.0, 0.0),
             lookat: Vec3::new(0.0, 0.0, -1.0),
             vup: Vec3::new(0.0, 1.0, 0.0),
+            defocus_angle: 0.0,
+            focus_dist: 10.0,
         }
     }
 }
@@ -63,6 +67,9 @@ pub struct Camera {
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
     pixel00_loc: Vec3,
+    defocus_angle: f64,
+    defocus_disk_u: Vec3,
+    defocus_disk_v: Vec3,
 }
 
 impl Camera {
@@ -82,10 +89,9 @@ impl Camera {
         let center = options.lookfrom;
 
         // Determine viewport dimensions.
-        let focal_length = (options.lookfrom - options.lookat).length();
         let theta = options.vfov.to_radians();
         let h = (theta / 2.0).tan();
-        let viewport_height = 2.0 * h * focal_length;
+        let viewport_height = 2.0 * h * options.focus_dist;
         let viewport_width = viewport_height * image_width / image_height;
 
         // Calculate the u,v,w unit basis vectors for the camera coordinate frame.
@@ -102,8 +108,14 @@ impl Camera {
         let pixel_delta_v = viewport_v / image_height;
 
         // Calculate the location of the upper left pixel.
-        let viewport_upper_left = center - focal_length * w - viewport_u / 2.0 - viewport_v / 2.0;
+        let viewport_upper_left =
+            center - options.focus_dist * w - viewport_u / 2.0 - viewport_v / 2.0;
         let pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+
+        // Calculate the defocus disk basis vectors.
+        let defocus_radius = options.focus_dist * (options.defocus_angle / 2.0).to_radians().tan();
+        let defocus_disk_u = defocus_radius * u;
+        let defocus_disk_v = defocus_radius * v;
 
         Self {
             rng,
@@ -117,6 +129,9 @@ impl Camera {
             pixel_delta_u,
             pixel_delta_v,
             pixel00_loc,
+            defocus_angle: options.defocus_angle,
+            defocus_disk_u,
+            defocus_disk_v,
         }
     }
 
@@ -128,18 +143,31 @@ impl Camera {
         &self.pixels
     }
 
+    fn defocus_disk_sample(&mut self) -> Vec3 {
+        // Returns a random point in the camera defocus disk.
+        let p = Vec3::random_in_unit_disk(&mut self.rng);
+        self.center + p.x() * self.defocus_disk_u + p.y() * self.defocus_disk_v
+    }
+
     fn get_ray(&mut self, i: f64, j: f64) -> Ray {
-        // Construct a camera ray originating from the origin and directed at a randomly-sampled
-        // point around the pixel location i, j.
+        // Construct a camera ray originating from the defocus disk and directed at a
+        // randomly-sampled point around the pixel location i, j.
 
         let offset = sample_square(&mut self.rng);
         let pixel_sample = self.pixel00_loc
             + ((i + offset.x()) * self.pixel_delta_u)
             + ((j + offset.y()) * self.pixel_delta_v);
 
+        let ray_origin = if self.defocus_angle <= 0.0 {
+            self.center
+        } else {
+            self.defocus_disk_sample()
+        };
+        let ray_direction = pixel_sample - ray_origin;
+
         Ray {
-            pos: self.center,
-            dir: pixel_sample - self.center,
+            pos: ray_origin,
+            dir: ray_direction,
         }
     }
 
