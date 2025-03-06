@@ -8,6 +8,7 @@ pub struct CameraOptions {
     pub aspect_ratio: f64, // Ratio of image width over height
     pub image_width: u16,  // Rendered image width in pixel count
     pub max_depth: u16,    // Maximum number of ray bounces into scene
+    pub vfov: f64,         // Vertical view angle (field of view)
 }
 
 impl Default for CameraOptions {
@@ -16,6 +17,7 @@ impl Default for CameraOptions {
             aspect_ratio: 1.0,
             image_width: 100,
             max_depth: 10,
+            vfov: 90.0,
         }
     }
 }
@@ -72,7 +74,9 @@ impl Camera {
         let image_height = i_height_usize as f64;
 
         let focal_length = 1.0;
-        let viewport_height = 2.0;
+        let theta = options.vfov.to_radians();
+        let h = (theta / 2.0).tan();
+        let viewport_height = 2.0 * h * focal_length;
         let viewport_width = viewport_height * image_width / image_height;
         let center = Vec3::new(0.0, 0.0, 0.0);
 
