@@ -20,7 +20,8 @@ use miniquad::{
     Bindings, BufferSource, BufferType, BufferUsage, EventHandler, FilterMode, GlContext, KeyCode,
     KeyMods, Pipeline, RenderingBackend, UniformsSource,
 };
-use std::rc::Rc;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const LAUNCH_WIDTH: i32 = 1200;
 const LAUNCH_HEIGHT: i32 = 675;
@@ -56,10 +57,9 @@ fn calc_zoom(
 struct App {
     gfx: GlContext,
     pipeline: Pipeline,
-    bindings: Bindings,
+    bindings: Vec<Bindings>,
     zoom: [f32; 2],
     camera: Camera,
-    scene: Scene,
 }
 
 impl App {
@@ -70,7 +70,7 @@ impl App {
 
         let mut scene = Scene::new();
 
-        let ground_material = Rc::new(Material::lambertian(Color::new(0.5, 0.5, 0.5)));
+        let ground_material = Arc::new(Material::lambertian(Color::new(0.5, 0.5, 0.5)));
         scene.add(Sphere::new(
             Vec3::new(0.0, -1000.0, 0.0),
             1000.0,
@@ -90,40 +90,47 @@ impl App {
                 }
 
                 let choose_mat = rng.random_f64();
-                let sphere_material: Rc<Material> = if choose_mat < 0.8 {
+                let sphere_material: Arc<Material> = if choose_mat < 0.8 {
                     // diffuse
                     let albedo = Color::from_vec3(Vec3::random(&mut rng))
                         * Color::from_vec3(Vec3::random(&mut rng));
-                    Rc::new(Material::lambertian(albedo))
+                    Arc::new(Material::lambertian(albedo))
                 } else if choose_mat < 0.95 {
                     // metal
                     let albedo = Color::from_vec3(Vec3::random_range(&mut rng, 0.5, 1.0));
                     let fuzz = rng.random_f64_range(0.0, 0.5);
-                    Rc::new(Material::metal(albedo, fuzz))
+                    Arc::new(Material::metal(albedo, fuzz))
                 } else {
                     // glass
-                    Rc::new(Material::dielectric(1.5))
+                    Arc::new(Material::dielectric(1.5))
                 };
 
                 scene.add(Sphere::new(center, 0.2, sphere_material));
             }
         }
 
-        let material1 = Rc::new(Material::dielectric(1.5));
+        let material1 = Arc::new(Material::dielectric(1.5));
         scene.add(Sphere::new(Vec3::new(0.0, 1.0, 0.0), 1.0, material1));
 
-        let material2 = Rc::new(Material::lambertian(Color::new(0.4, 0.2, 0.1)));
+        let material2 = Arc::new(Material::lambertian(Color::new(0.4, 0.2, 0.1)));
         scene.add(Sphere::new(Vec3::new(-4.0, 1.0, 0.0), 1.0, material2));
 
-        let material3 = Rc::new(Material::metal(Color::new(0.7, 0.6, 0.5), 0.0));
+        let material3 = Arc::new(Material::metal(Color::new(0.7, 0.6, 0.5), 0.0));
         scene.add(Sphere::new(Vec3::new(4.0, 1.0, 0.0), 1.0, material3));
 
         // Camera
 
+        let threads = std::env::args()
+            .nth(1)
+            .and_then(|a| a.parse::<u8>().ok())
+            .unwrap_or(4);
+
         let image_width: u16 = 1200;
 
         let camera = Camera::new(
-            rng,
+            &Arc::new(scene),
+            miniquad::date::now() as _,
+            threads,
             CameraOptions {
                 aspect_ratio: 16.0 / 9.0,
                 image_width,
@@ -137,7 +144,7 @@ impl App {
             },
         );
 
-        let image_height = camera.get_image_height() as u16;
+        let image_height = camera.get_height() as u16;
 
         // App Setup
 
@@ -164,14 +171,18 @@ impl App {
             BufferSource::slice(&quad_ibuf_data),
         );
 
-        let texture = gfx.new_texture_from_rgba8(image_width, image_height, camera.get_pixels());
-        gfx.texture_set_mag_filter(texture, FilterMode::Nearest);
+        let mut bindings: Vec<Bindings> = vec![];
 
-        let bindings = Bindings {
-            vertex_buffers: vec![quad_vbuf],
-            index_buffer: quad_ibuf,
-            images: vec![texture],
-        };
+        camera.for_each_view(|_, _, view_width, pixel_buf| {
+            let texture = gfx.new_texture_from_rgba8(view_width as u16, image_height, pixel_buf);
+            gfx.texture_set_mag_filter(texture, FilterMode::Nearest);
+
+            bindings.push(Bindings {
+                vertex_buffers: vec![quad_vbuf],
+                index_buffer: quad_ibuf,
+                images: vec![texture],
+            });
+        });
 
         Self {
             gfx,
@@ -184,7 +195,6 @@ impl App {
                 LAUNCH_HEIGHT as f32,
             ),
             camera,
-            scene,
         }
     }
 }
@@ -193,20 +203,32 @@ impl EventHandler for App {
     fn draw(&mut self) {
         self.gfx.begin_default_pass(Default::default());
         self.gfx.apply_pipeline(&self.pipeline);
-        self.gfx.apply_bindings(&self.bindings);
-        self.gfx
-            .apply_uniforms(UniformsSource::table(&shader::Uniforms { zoom: self.zoom }));
-        self.gfx.draw(0, 6, 1);
+
+        self.camera.for_each_view(|i, view_x, view_width, _| {
+            self.gfx.apply_bindings(&self.bindings[i]);
+            self.gfx
+                .apply_uniforms(UniformsSource::table(&shader::Uniforms {
+                    x_offset: view_x as f32,
+                    view_width: view_width as f32,
+                    max_width: self.camera.get_width() as f32,
+                    zoom: self.zoom,
+                }));
+
+            self.gfx.draw(0, 6, 1);
+        });
+
         self.gfx.end_render_pass();
 
         self.gfx.commit_frame();
     }
 
     fn update(&mut self) {
-        self.camera
-            .render(&self.scene, miniquad::date::now() + 0.75 / 60.0);
-        self.gfx
-            .texture_update(self.bindings.images[0], self.camera.get_pixels());
+        let until = Instant::now() + Duration::from_micros(950_000 / 60);
+        self.camera.render(until);
+        self.camera.for_each_view(|i, _, _, pixel_buf| {
+            self.gfx
+                .texture_update(self.bindings[i].images[0], pixel_buf);
+        });
     }
 
     fn key_down_event(&mut self, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
@@ -216,8 +238,12 @@ impl EventHandler for App {
     }
 
     fn resize_event(&mut self, width: f32, height: f32) {
-        let (image_width, image_height) = self.gfx.texture_size(self.bindings.images[0]);
-        self.zoom = calc_zoom(image_width as f32, image_height as f32, width, height);
+        self.zoom = calc_zoom(
+            self.camera.get_width() as f32,
+            self.camera.get_height() as f32,
+            width,
+            height,
+        );
     }
 }
 
@@ -245,12 +271,17 @@ mod shader {
     attribute vec2 in_pos;
     attribute vec2 in_uv;
 
+    uniform float x_offset;
+    uniform float view_width;
+    uniform float max_width;
     uniform vec2 zoom;
 
     varying vec2 tex_coord;
 
     void main() {
-        gl_Position = vec4(in_pos * zoom, 0, 1);
+        gl_Position = vec4(
+            (((in_pos.x + 1.0) * 0.5 * view_width + x_offset) * 2.0 / max_width - 1.0) * zoom.x,
+            in_pos.y * zoom.y, 0.0, 1.0);
         tex_coord = in_uv;
     }
     "#;
@@ -269,6 +300,9 @@ mod shader {
 
     #[repr(C)]
     pub struct Uniforms {
+        pub x_offset: f32,
+        pub view_width: f32,
+        pub max_width: f32,
         pub zoom: [f32; 2],
     }
 
@@ -282,7 +316,12 @@ mod shader {
                 ShaderMeta {
                     images: vec![String::from("tex")],
                     uniforms: UniformBlockLayout {
-                        uniforms: vec![UniformDesc::new("zoom", UniformType::Float2)],
+                        uniforms: vec![
+                            UniformDesc::new("x_offset", UniformType::Float1),
+                            UniformDesc::new("view_width", UniformType::Float1),
+                            UniformDesc::new("max_width", UniformType::Float1),
+                            UniformDesc::new("zoom", UniformType::Float2),
+                        ],
                     },
                 },
             )

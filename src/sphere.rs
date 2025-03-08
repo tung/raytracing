@@ -3,16 +3,16 @@ use crate::material::*;
 use crate::ray::*;
 use crate::vec3::*;
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Sphere {
     center: Vec3,
     radius: f64,
-    mat: Rc<Material>,
+    mat: Arc<Material>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, mat: Rc<Material>) -> Self {
+    pub fn new(center: Vec3, radius: f64, mat: Arc<Material>) -> Self {
         Self {
             center,
             radius,

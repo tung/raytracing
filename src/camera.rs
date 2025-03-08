@@ -4,6 +4,11 @@ use crate::ray::*;
 use crate::scene::*;
 use crate::vec3::*;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 pub struct CameraOptions {
     pub aspect_ratio: f64,  // Ratio of image width over height
     pub image_width: u16,   // Rendered image width in pixel count
@@ -32,57 +37,25 @@ impl Default for CameraOptions {
     }
 }
 
-fn sample_square(rng: &mut Rng) -> Vec3 {
-    // Returns the vector to a random point in the [-0.5,-0.5] to [+0.5,+0.5] unit square.
-    Vec3::new(rng.random_f64() - 0.5, rng.random_f64() - 0.5, 0.0)
-}
-
-fn ray_color(rng: &mut Rng, depth: u16, r: &Ray, scene: &Scene) -> Color {
-    if depth == 0 {
-        return Color::new(0.0, 0.0, 0.0);
-    }
-
-    if let Some(rec) = scene.hit(r, 0.001, f64::INFINITY) {
-        return if let Some(sc_rec) = rec.mat.scatter(rng, r, &rec) {
-            sc_rec.attenuation * ray_color(rng, depth - 1, &sc_rec.scattered, scene)
-        } else {
-            Color::new(0.0, 0.0, 0.0)
-        };
-    }
-
-    let unit_direction = r.dir.unit();
-    let a = 0.5 * (unit_direction.y() + 1.0);
-    (1.0 - a) * Color::new(1.0, 1.0, 1.0) + a * Color::new(0.5, 0.7, 1.0)
-}
-
 pub struct Camera {
-    rng: Rng,
-    start_row: usize,
-    render_passes: f64,
-    colors: Vec<Color>,
-    pixels: Vec<u8>,
     image_width: usize,
     image_height: usize,
-    max_depth: u16,
-    center: Vec3,
-    pixel_delta_u: Vec3,
-    pixel_delta_v: Vec3,
-    pixel00_loc: Vec3,
-    defocus_angle: f64,
-    defocus_disk_u: Vec3,
-    defocus_disk_v: Vec3,
+    pixel_bufs: Vec<Arc<Mutex<Vec<u8>>>>,
+    view_xs: Vec<usize>,
+    view_widths: Vec<usize>,
+    passes_wanted: usize,
+    pause: Arc<AtomicBool>,
+    passes_wanted_txs: Vec<SyncSender<usize>>,
+    passes_done_rxs: Vec<Receiver<usize>>,
 }
 
 impl Camera {
-    pub fn new(rng: Rng, options: CameraOptions) -> Self {
+    pub fn new(scene: &Arc<Scene>, rng_seed: u64, num_views: u8, options: CameraOptions) -> Self {
         let i_width_usize = options.image_width as usize;
         let i_height_usize = usize::max(
             1,
             (options.image_width as f64 / options.aspect_ratio) as usize,
         );
-
-        let colors = vec![Color::new(0.0, 0.0, 0.0); i_width_usize * i_height_usize];
-        let pixels = vec![0_u8; 4 * i_width_usize * i_height_usize];
 
         let image_width = i_width_usize as f64;
         let image_height = i_height_usize as f64;
@@ -118,44 +91,175 @@ impl Camera {
         let defocus_disk_u = defocus_radius * u;
         let defocus_disk_v = defocus_radius * v;
 
+        // Create multiple vertical views to cover the camera's full view of the scene.
+
+        let num_views = num_views as usize;
+
+        assert!(num_views > 0);
+        assert!(num_views <= i_width_usize);
+
+        let mut pixel_bufs: Vec<Arc<Mutex<Vec<u8>>>> = vec![];
+        let mut view_xs: Vec<usize> = vec![];
+        let mut view_widths: Vec<usize> = vec![];
+        let pause = Arc::new(AtomicBool::new(false));
+        let mut passes_wanted_txs: Vec<SyncSender<usize>> = vec![];
+        let mut passes_done_rxs: Vec<Receiver<usize>> = vec![];
+
+        for i in 0..num_views {
+            let view_x = i * i_width_usize / num_views;
+            let view_width = (i + 1) * i_width_usize / num_views - view_x;
+
+            let pixel_buf = Arc::new(Mutex::new(vec![0_u8; 4 * view_width * i_height_usize]));
+
+            pixel_bufs.push(Arc::clone(&pixel_buf));
+            view_xs.push(view_x);
+            view_widths.push(view_width);
+
+            let (passes_wanted_tx, passes_wanted_rx) = std::sync::mpsc::sync_channel::<usize>(0);
+            let (passes_done_tx, passes_done_rx) = std::sync::mpsc::sync_channel::<usize>(0);
+
+            passes_wanted_txs.push(passes_wanted_tx);
+            passes_done_rxs.push(passes_done_rx);
+
+            std::thread::spawn({
+                let scene = Arc::clone(scene);
+                let rng_seed = rng_seed + i as u64;
+                let pause = pause.clone();
+
+                move || {
+                    let mut view = View {
+                        color_buf: vec![Color::new(0.0, 0.0, 0.0); view_width * i_height_usize],
+                        width: view_width,
+                        height: i_height_usize,
+                        max_depth: options.max_depth,
+                        start_row: 0,
+                        render_passes: 0,
+                        pause,
+                        pixel00_loc: pixel00_loc + view_x as f64 * pixel_delta_u,
+                        pixel_delta_u,
+                        pixel_delta_v,
+                        center,
+                        defocus_angle: options.defocus_angle,
+                        defocus_disk_u,
+                        defocus_disk_v,
+                    };
+                    let mut rng = Rng::new(rng_seed);
+
+                    while let Ok(passes_wanted) = passes_wanted_rx.recv() {
+                        let mut pixel_buf = pixel_buf.lock().expect("pixel_buf mutex");
+                        view.render(&mut rng, &scene, &mut pixel_buf[..], passes_wanted);
+                        drop(pixel_buf);
+                        passes_done_tx
+                            .send(view.render_passes)
+                            .expect("passes_done_tx");
+                    }
+                }
+            });
+        }
+
         Self {
-            rng,
-            start_row: 0,
-            render_passes: 1.0,
-            colors,
-            pixels,
             image_width: i_width_usize,
             image_height: i_height_usize,
-            max_depth: options.max_depth,
-            center,
-            pixel_delta_u,
-            pixel_delta_v,
-            pixel00_loc,
-            defocus_angle: options.defocus_angle,
-            defocus_disk_u,
-            defocus_disk_v,
+            pixel_bufs,
+            view_xs,
+            view_widths,
+            passes_wanted: 0,
+            pause,
+            passes_wanted_txs,
+            passes_done_rxs,
         }
     }
 
-    pub fn get_image_height(&self) -> usize {
+    pub fn get_width(&self) -> usize {
+        self.image_width
+    }
+
+    pub fn get_height(&self) -> usize {
         self.image_height
     }
 
-    pub fn get_pixels(&self) -> &[u8] {
-        &self.pixels
+    pub fn for_each_view<F: FnMut(usize, usize, usize, &[u8])>(&self, mut f: F) {
+        for (i, ((view_x, view_width), pixel_buf)) in self
+            .view_xs
+            .iter()
+            .copied()
+            .zip(self.view_widths.iter().copied())
+            .zip(&self.pixel_bufs)
+            .enumerate()
+        {
+            let pixel_buf = pixel_buf.lock().expect("pixel_buf mutex");
+            f(i, view_x, view_width, &pixel_buf);
+        }
     }
 
-    fn defocus_disk_sample(&mut self) -> Vec3 {
+    pub fn render(&mut self, until: Instant) {
+        // Request no more than `self.passes_wanted` render passes from view threads.
+        for passes_wanted_tx in &self.passes_wanted_txs {
+            passes_wanted_tx
+                .send(self.passes_wanted)
+                .expect("passes_wanted_tx");
+        }
+
+        // Sleep up to `until`, then pause any currently-rendering view threads.
+        let now = Instant::now();
+        if until > now {
+            std::thread::sleep(until.saturating_duration_since(now));
+        }
+        self.pause.store(true, Ordering::Relaxed);
+
+        // Gather passes done by all the view threads.
+        let mut all_passes_done = true;
+        for passes_done_rx in &self.passes_done_rxs {
+            let this_passes_done = passes_done_rx.recv().expect("passes_done_rx");
+            if this_passes_done < self.passes_wanted {
+                all_passes_done = false;
+            }
+        }
+
+        // Increment `self.passes_wanted` if all threads have finished this pass.
+        if all_passes_done {
+            self.passes_wanted += 1;
+        }
+
+        // Prepare to let view threads render again.
+        self.pause.store(false, Ordering::Relaxed);
+    }
+}
+
+struct View {
+    color_buf: Vec<Color>,
+    width: usize,
+    height: usize,
+    max_depth: u16,
+    start_row: usize,
+    render_passes: usize,
+    pause: Arc<AtomicBool>,
+    pixel00_loc: Vec3,
+    pixel_delta_u: Vec3,
+    pixel_delta_v: Vec3,
+    center: Vec3,
+    defocus_angle: f64,
+    defocus_disk_u: Vec3,
+    defocus_disk_v: Vec3,
+}
+
+impl View {
+    fn sample_square(rng: &mut Rng) -> Vec3 {
+        // Returns the vector to a random point in the [-0.5,-0.5] to [+0.5,+0.5] unit square.
+        Vec3::new(rng.random_f64() - 0.5, rng.random_f64() - 0.5, 0.0)
+    }
+
+    fn defocus_disk_sample(&self, rng: &mut Rng) -> Vec3 {
         // Returns a random point in the camera defocus disk.
-        let p = Vec3::random_in_unit_disk(&mut self.rng);
+        let p = Vec3::random_in_unit_disk(rng);
         self.center + p.x() * self.defocus_disk_u + p.y() * self.defocus_disk_v
     }
 
-    fn get_ray(&mut self, i: f64, j: f64) -> Ray {
+    fn get_ray(&self, rng: &mut Rng, i: f64, j: f64) -> Ray {
         // Construct a camera ray originating from the defocus disk and directed at a
         // randomly-sampled point around the pixel location i, j.
 
-        let offset = sample_square(&mut self.rng);
+        let offset = Self::sample_square(rng);
         let pixel_sample = self.pixel00_loc
             + ((i + offset.x()) * self.pixel_delta_u)
             + ((j + offset.y()) * self.pixel_delta_v);
@@ -163,7 +267,7 @@ impl Camera {
         let ray_origin = if self.defocus_angle <= 0.0 {
             self.center
         } else {
-            self.defocus_disk_sample()
+            self.defocus_disk_sample(rng)
         };
         let ray_direction = pixel_sample - ray_origin;
 
@@ -173,42 +277,68 @@ impl Camera {
         }
     }
 
-    pub fn render(&mut self, scene: &Scene, until: f64) {
-        let mut colors = Vec::new();
-        let mut pixels = Vec::new();
+    fn ray_color(rng: &mut Rng, depth: u16, r: &Ray, scene: &Scene) -> Color {
+        if depth == 0 {
+            return Color::new(0.0, 0.0, 0.0);
+        }
 
-        std::mem::swap(&mut colors, &mut self.colors);
-        std::mem::swap(&mut pixels, &mut self.pixels);
+        if let Some(rec) = scene.hit(r, 0.001, f64::INFINITY) {
+            return if let Some(sc_rec) = rec.mat.scatter(rng, r, &rec) {
+                sc_rec.attenuation * Self::ray_color(rng, depth - 1, &sc_rec.scattered, scene)
+            } else {
+                Color::new(0.0, 0.0, 0.0)
+            };
+        }
 
-        let color_rows = colors.chunks_exact_mut(self.image_width);
-        let pixel_rows = pixels.chunks_exact_mut(self.image_width * 4);
+        let unit_direction = r.dir.unit();
+        let a = 0.5 * (unit_direction.y() + 1.0);
+        (1.0 - a) * Color::new(1.0, 1.0, 1.0) + a * Color::new(0.5, 0.7, 1.0)
+    }
+
+    pub fn render(
+        &mut self,
+        rng: &mut Rng,
+        scene: &Scene,
+        pixel_buf: &mut [u8],
+        passes_wanted: usize,
+    ) {
+        if self.render_passes >= passes_wanted {
+            return;
+        }
+
+        let passes_plus_one = self.render_passes as f64 + 1.0;
+        let mut color_buf = vec![];
+
+        std::mem::swap(&mut color_buf, &mut self.color_buf);
+
+        let color_rows = color_buf.chunks_exact_mut(self.width);
+        let pixel_rows = pixel_buf.chunks_exact_mut(self.width * 4);
 
         for (y, (color_row, pixel_row)) in
             color_rows.zip(pixel_rows).enumerate().skip(self.start_row)
         {
-            let cs = color_row.iter_mut();
-            let ps = pixel_row.chunks_exact_mut(4);
+            let colors = color_row.iter_mut();
+            let pixels = pixel_row.chunks_exact_mut(4);
 
-            for (x, (c, p)) in cs.zip(ps).enumerate() {
-                let ray = self.get_ray(x as f64, y as f64);
-                *c += ray_color(&mut self.rng, self.max_depth, &ray, scene);
-                p[0] = ((c.r() / self.render_passes).sqrt() * 255.999) as u8;
-                p[1] = ((c.g() / self.render_passes).sqrt() * 255.999) as u8;
-                p[2] = ((c.b() / self.render_passes).sqrt() * 255.999) as u8;
+            for (x, (c, p)) in colors.zip(pixels).enumerate() {
+                let ray = self.get_ray(rng, x as f64, y as f64);
+                *c += Self::ray_color(rng, self.max_depth, &ray, scene);
+                p[0] = ((c.r() / passes_plus_one).sqrt() * 255.999) as u8;
+                p[1] = ((c.g() / passes_plus_one).sqrt() * 255.999) as u8;
+                p[2] = ((c.b() / passes_plus_one).sqrt() * 255.999) as u8;
                 p[3] = 255;
             }
 
             self.start_row += 1;
-            if self.start_row >= self.image_height {
-                self.render_passes += 1.0;
+            if self.start_row >= self.height {
+                self.render_passes += 1;
                 self.start_row = 0;
             }
-            if miniquad::date::now() >= until {
+            if self.pause.load(Ordering::Relaxed) {
                 break;
             }
         }
 
-        std::mem::swap(&mut colors, &mut self.colors);
-        std::mem::swap(&mut pixels, &mut self.pixels);
+        std::mem::swap(&mut color_buf, &mut self.color_buf);
     }
 }
