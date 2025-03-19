@@ -2,6 +2,8 @@
 name = "raytracing"
 version = "0.1.0"
 edition = "2024"
+authors = ["Tung Nguyen"]
+description = "A simple multi-threaded Rust ray tracing demo"
 
 [dependencies]
 miniquad = "0.4.7"
