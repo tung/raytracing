@@ -205,7 +205,7 @@ impl Camera {
         if until > now {
             std::thread::sleep(until.saturating_duration_since(now));
         }
-        self.pause.store(true, Ordering::Relaxed);
+        self.pause.store(true, Ordering::Release);
 
         // Gather passes done by all the view threads.
         let mut all_passes_done = true;
@@ -222,7 +222,7 @@ impl Camera {
         }
 
         // Prepare to let view threads render again.
-        self.pause.store(false, Ordering::Relaxed);
+        self.pause.store(false, Ordering::Release);
     }
 }
 
@@ -334,7 +334,7 @@ impl View {
                 self.render_passes += 1;
                 self.start_row = 0;
             }
-            if self.pause.load(Ordering::Relaxed) {
+            if self.pause.load(Ordering::Acquire) {
                 break;
             }
         }
